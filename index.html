@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/gh/openlayers/openlayers.github.io@master/en/v6.2.1/css/ol.css"
+      type="text/css"
+    />
+    <link
+      href="https://fonts.googleapis.com/css?family=Roboto:400,700&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css?family=Roboto+Slab:400,600,700&amp;display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      .map {
+        min-height: 200px;
+        height: 30vh;
+        width: 100%;
+        background-color: gray;
+        overflow: hidden;
+        border: none;
+      }
+      @media only screen and (min-width: 600px) {
+        /* For tablets: */
+        .map {
+          height: 60vh;
+        }
+      }
+      @media only screen and (min-width: 768px) {
+        .map {
+          height: 70vh;
+        }
+      }
+      h1,
+      h2,
+      h3 {
+        font-family: "Roboto Slab";
+        font-weight: 400;
+        line-height: 1.1;
+        letter-spacing: 2px;
+        font-style: normal;
+      }
+      body {
+        font-family: "Roboto";
+        font-weight: 400;
+        line-height: 1.1;
+        font-style: normal;
+        height: 100%;
+      }
+      .ol-touch .ol-control button {
+        background-color: rgba(0, 0, 0, 0.3);
+      }
+    </style>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script
+      type="text/javascript"
+      src="https://code.jquery.com/jquery-1.11.0.min.js"
+    ></script>
+    <script src="https://cdn.jsdelivr.net/gh/openlayers/openlayers.github.io@master/en/v6.2.1/build/ol.js"></script>
+    <title>COVID19info.at</title>
+  </head>
+  <body>
+    <h1>COVID-19 Infektionen je Bundesland</h1>
+
+    <div id="countryMap" class="map"></div>
+    letzte Datenaktualisierung: <span id="timeOfDate">- - -</span>.
+    <h2>Beschreibung der initialen Kartendarstellung</h2>
+    In dieser Karte können Sie vergleichen, in welchem Bundesland es wie viele
+    Infektionen gibt. Je größer der Zahlenwert desto größer ist die
+    Schriftgr&ouml;&szlig;e.
+
+    <h2>Beschreibung der Daten bei Mausbewegungen oder Tippen</h2>
+    In der eingeblendeten Informationsbox werden Daten angegeben und weiters die
+    Anzahl an Infektionen zu der Anzahl an Einwohnern in Verhältnis gesetzt.
+    Hinweis: Bei den errechneten Verhältnissen werden Promille (1/1000 = 1‰) als
+    Einheit verwendet und die Zahlenwerte sind aufgerundet.
+
+    <h1>COVID-19 Infektionen je politischen Bezirk</h1>
+
+    <div id="districtsMap" class="map"></div>
+    letzte Datenaktualisierung: <span id="timeOfDate2">- - -</span>
+    <h2>Beschreibung der initialen Kartendarstellung</h2>
+    In dieser Karte können Sie vergleichen, in welchem Bezirk es wie viele
+    Infektionen gibt. Angewendet werden die oben beschriebenen
+    Darstellungsmethoden. Für Wien stehen uns keine detaillierteren
+    Informationen, zum Beispiel eine Aufteilung in Bezirke zur Verfügung.
+
+    <script type="text/javascript">
+      // statistical functions used for labelling
+      function Quartile_25(data) {
+        return Quartile(data, 0.25);
+      }
+
+      function Quartile_50(data) {
+        return Quartile(data, 0.5);
+      }
+
+      function Quartile_75(data) {
+        return Quartile(data, 0.75);
+      }
+
+      function Quartile(data, q) {
+        data = data.filter((x) => x); // filter all NaN and other JavaScript Falsy values
+        data = data.sort((a, b) => a - b);
+        var pos = (data.length - 1) * q;
+        var base = Math.floor(pos);
+        var rest = pos - base;
+        if (data[base + 1] !== undefined) {
+          return data[base] + rest * (data[base + 1] - data[base]);
+        } else {
+          return data[base];
+        }
+      }
+      //global variables used for labeling
+      //var bezirkeQuartile = {};
+      // var countryQuartile = {};
+
+      // background Map
+      var basemap1 = new ol.layer.Tile({
+        source: new ol.source.XYZ({
+          maxZoom: 19,
+          attributions: [
+            'Hintergrundkarte:  <a href="http://www.basemap.at">basemap.at</a> &copy; <a href="http://creativecommons.org/licenses/by/3.0/at/">CC BY 3.0 AT</a>',
+          ],
+          crossOrigin: "anonymous",
+          url:
+            "//maps{1-4}.wien.gv.at/basemap/bmapgelaende/grau/google3857/{z}/{y}/{x}.jpeg",
+        }),
+      });
+
+      // openLayers Map
+      var countryMap = new ol.Map({
+        view: new ol.View({
+          extent: ol.proj.transformExtent(
+            [7, 44, 20, 52],
+            "EPSG:4326",
+            "EPSG:3857"
+          ),
+        }),
+        target: "countryMap",
+        layers: [basemap1],
+        controls: ol.control.defaults({
+          attribution: true,
+          zoom: true,
+          rotate: false,
+        }),
+        interactions: new ol.interaction.defaults({
+          doubleClickZoom: true,
+          dragAndDrop: false,
+          keyboardPan: false,
+          dragPan: true,
+          pointer: false,
+          select: false,
+          altShiftDragRotate: false,
+          pinchRotate: false,
+          mouseWheelZoom: false,
+          pinchZoom: true,
+          onFocusOnly: false
+        }),
+      });
+      var mouseWheelInt = new ol.interaction.MouseWheelZoom();
+      countryMap.addInteraction(mouseWheelInt);
+      countryMap.on("wheel", function (evt) {
+        mouseWheelInt.setActive(ol.events.condition.shiftKeyOnly(evt));
+      });
+
+      // background Map
+      var basemap2 = new ol.layer.Tile({
+        source: new ol.source.XYZ({
+          maxZoom: 19,
+          attributions: [
+            'Hintergrundkarte:  <a href="http://www.basemap.at">basemap.at</a> &copy; <a href="http://creativecommons.org/licenses/by/3.0/at/">CC BY 3.0 AT</a>',
+          ],
+          crossOrigin: "anonymous",
+          url:
+            "//maps{1-4}.wien.gv.at/basemap/bmapgelaende/grau/google3857/{z}/{y}/{x}.jpeg",
+        }),
+      });
+
+      // openLayers Map
+      var districtsMap = new ol.Map({
+        target: "districtsMap",
+        layers: [basemap2],
+        view: new ol.View({
+          maxZoom: 10,
+          extent: ol.proj.transformExtent(
+            [7, 44, 20, 52],
+            "EPSG:4326",
+            "EPSG:3857"
+          ),
+        }),
+        controls: ol.control.defaults({
+          attribution: true,
+          zoom: true,
+          rotate: false,
+        }),
+        interactions: new ol.interaction.defaults({
+          dragAndDrop: false,
+          keyboardPan: false,
+          pointer: false,
+          dragPan: true,
+          select: false,
+          altShiftDragRotate: false,
+          pinchRotate: false,
+          pinchZoom: true,
+          mouseWheelZoom: false
+        }),
+      }); 
+      districtsMap.addInteraction(mouseWheelInt);
+      districtsMap.on("wheel", function (evt) {
+        mouseWheelInt.setActive(ol.events.condition.shiftKeyOnly(evt));
+      });
+
+      /** calculates the Styling for the features in the initial districtsMap or countryMap view
+       *  ATTENTION needs a binded quartileObject to work!!
+       */
+       function calculateInitialCountriesMapStyling(feature) {
+        let quartileObject = this; // Magic with bind
+        return [
+          calculatePolygonStyleAccordingFeatureValues(feature),
+          calculateTextStyleAccordingCountriesFeatureValues(feature, quartileObject),
+        ];
+      }
+
+
+      /** calculates the Styling for the features in the initial districtsMap or countryMap view
+       *  ATTENTION needs a binded quartileObject to work!!
+       */
+      function calculateInitialDistrictMapStyling(feature) {
+        let quartileObject = this; // Magic with bind
+        return [
+          calculatePolygonStyleAccordingFeatureValues(feature),
+          calculateTextStyleAccordingDistrictFeatureValues(feature, quartileObject),
+        ];
+      }
+
+      /** calculates the styling of a polygon
+       *
+       */
+      function calculatePolygonStyleAccordingFeatureValues(feature) {
+        let fillColor;
+
+        if (feature.values_.Eigentum === 'beide') {
+          fillColor = "rgba(255, 255, 255, 0.1)";
+        } else {
+          fillColor = "rgba(204, 51, 51,0.1)";
+        }
+        return new ol.style.Style({
+          stroke: new ol.style.Stroke({
+            color: "rgb(76, 81, 102)",
+            width: 1,
+          }),
+          fill: new ol.style.Fill({
+            color: fillColor,
+          }),
+        });
+      }
+
+      function chooseTextPoint(feature) {
+        var retPoint;
+        if (feature.getGeometry().getType() === "MultiPolygon") {
+          // exception for Tyrol - it is a Multipolygon with 3 elements
+          if (feature.values_.BL === "Tirol") {
+            retPoint = feature
+              .getGeometry()
+              .getPolygons()[2]
+              .getInteriorPoint();
+          } else {
+            retPoint = feature
+              .getGeometry()
+              .getPolygons()[0]
+              .getInteriorPoint();
+          }
+        } else if (feature.getGeometry().getType() === "Polygon") {
+          retPoint = feature.getGeometry().getInteriorPoint();
+        }
+        return retPoint;
+      }
+
+      /** calculates a openLayers Text Style for the feature
+       *  the text font size and transparency changes according to the infected data
+       */
+      function calculateTextStyleAccordingDistrictFeatureValues(
+        feature,
+        quartileObject
+      ) {
+        //adjust labels according to the quartile's of all infected persons
+        let colorPerQuartile = "rgba(204, 51, 51,0.2)";
+        let fontPerQuartile = "bold 10px Roboto";
+        if (feature.values_.infected <= quartileObject.quartile_25) {
+          colorPerQuartile = "rgba(0, 0, 0,0.5)";
+          fontPerQuartile = `${districtsMap.getView().getZoom()*1.2}px Roboto`; // because both maps have the same extent it does not matter if district of 
+        } else if (
+          feature.values_.infected > quartileObject.quartile_25 &&
+          feature.values_.infected <= quartileObject.quartile_50
+        ) {
+          colorPerQuartile = "rgba(0, 0, 0,0.6)";
+          fontPerQuartile = `${districtsMap.getView().getZoom()*1.3}px Roboto`;
+        } else if (
+          feature.values_.infected > quartileObject.quartile_50 &&
+          feature.values_.infected <= quartileObject.quartile_75
+        ) {
+          colorPerQuartile = "rgba(0, 0, 0,0.7)";
+          fontPerQuartile = `${districtsMap.getView().getZoom()*1.4}px Roboto`;
+        } else if (feature.values_.infected > quartileObject.quartile_75) {
+          // > quartile_75
+          colorPerQuartile = "rgba(0, 0, 0,1)";
+          fontPerQuartile = `${districtsMap.getView().getZoom()*1.5}px Roboto`;
+        }
+
+        let stroke = new ol.style.Stroke({
+          color: "rgba(255, 255, 255, 0.5)",
+          width: 3,
+        });
+        return new ol.style.Style({
+          text: new ol.style.Text({
+            text: `${
+              feature.values_.infected == null
+                ? " kein Wert"
+                : feature.values_.infected
+            }`,
+            fill: new ol.style.Fill({ color: colorPerQuartile }),
+            font: fontPerQuartile,
+            stroke: stroke,
+            padding: [5, 5, 5, 5], // text should not overlap in the districtsMap
+            //overflow: true, // text is shown, even when the text is larger than the polygon
+            placement: "point",
+          }),
+          geometry: chooseTextPoint,
+          zIndex: 10,
+        });
+      }
+
+      function calculateTextStyleAccordingCountriesFeatureValues(
+        feature,
+        quartileObject
+      ) {
+        //adjust labels according to the quartile's of all infected persons
+        let colorPerQuartile = "rgba(204, 51, 51,0.2)";
+        let fontPerQuartile = "bold 10px Roboto";
+        if (feature.values_.infected <= quartileObject.quartile_25) {
+          colorPerQuartile = "rgba(0, 0, 0,0.7)";
+          fontPerQuartile = `${countryMap.getView().getZoom()*1.5}px Roboto`; // because both maps have the same extent it does not matter if district of 
+        } else if (
+          feature.values_.infected > quartileObject.quartile_25 &&
+          feature.values_.infected <= quartileObject.quartile_50
+        ) {
+          colorPerQuartile = "rgba(0, 0, 0,0.8)";
+          fontPerQuartile = `${countryMap.getView().getZoom()*1.6}px Roboto`;
+        } else if (
+          feature.values_.infected > quartileObject.quartile_50 &&
+          feature.values_.infected <= quartileObject.quartile_75
+        ) {
+          colorPerQuartile = "rgba(0, 0, 0,0.9)";
+          fontPerQuartile = `${countryMap.getView().getZoom()*1.7}px Roboto`;
+        } else if (feature.values_.infected > quartileObject.quartile_75) {
+          // > quartile_75
+          colorPerQuartile = "rgba(0, 0, 0,1)";
+          fontPerQuartile = `${countryMap.getView().getZoom()*1.8}px Roboto`;
+        }
+
+        let stroke = new ol.style.Stroke({
+          color: "rgba(255, 255, 255, 0.5)",
+          width: 3,
+        });
+        return new ol.style.Style({
+          text: new ol.style.Text({
+            text: `${
+              feature.values_.infected == null
+                ? " kein Wert"
+                : feature.values_.infected
+            }`,
+            fill: new ol.style.Fill({ color: colorPerQuartile }),
+            font: fontPerQuartile,
+            stroke: stroke,
+            padding: [5, 5, 5, 5], // text should not overlap in the districtsMap
+            //overflow: true, // text is shown, even when the text is larger than the polygon
+            placement: "point",
+          }),
+          geometry: chooseTextPoint,
+          zIndex: 10,
+        });
+      }
+
+
+      function getActualDataForCountryID(actualData, id) {
+        return actualData.bundesland[id];
+      }
+      function getActualDataForDistrictID(actualData, id) {
+        return actualData.bezirke[id];
+      }
+
+      function createCountryVectorSource(actualData, countries) {
+        let vectorSource = new ol.source.Vector({
+          features: new ol.format.GeoJSON().readFeatures(countries),
+          attributions:
+            "COVID-19 Datenquelle: BMSGPK via <a href='https://corin.at'>corin.at</a>, Einwohnerzahlen: STATISTIK AUSTRIA Erstellt am 20.1.2020.",
+        });
+        vectorSource.getFeatures().forEach((feature) => {
+          feature.setId(feature.values_.ID);
+          feature.setProperties({
+            infected: getActualDataForCountryID(actualData, feature.values_.ID),
+          });
+        });
+        return vectorSource;
+      }
+
+      function calculateStatistics(vectorSource) {
+        let datafeatures = [];
+        vectorSource.getFeatures().forEach(function (feature) {
+          datafeatures.push(Number(feature.values_.infected));
+        });
+        return {
+          quartile_25: Quartile_25(datafeatures),
+          quartile_50: Quartile_50(datafeatures),
+          quartile_75: Quartile_75(datafeatures),
+        };
+      }
+
+      const countriesPromise = fetch("./data/countries_3857.geojson");
+      const actualDataPromise = fetch("./facade.php"); //TODO: https://gisolutions.at/covid19info/facade.php
+
+      /** combine the two data sources, calculate statistics and add the data to the map
+       *
+       */
+      Promise.all([actualDataPromise, countriesPromise])
+        .then((res) => Promise.all(res.map((r) => r.json())))
+        .then(([actualData, countries]) => {
+          let vectorSource = createCountryVectorSource(actualData, countries);
+
+          document.getElementById("timeOfDate").innerHTML = actualData.dataTime;
+          let counrtryStatistics = calculateStatistics(vectorSource);
+          var vectorLayer = new ol.layer.Vector({
+            source: vectorSource,
+            style: calculateInitialCountriesMapStyling.bind(counrtryStatistics),
+          });
+          countryMap.getView().fit(vectorLayer.getSource().getExtent());
+          countryMap.addControl(
+            new ol.control.ZoomToExtent({
+              extent: vectorLayer.getSource().getExtent(),
+            })
+          );
+          countryMap.addLayer(vectorLayer);
+        })
+        .catch((err) => console.error(err));
+
+      function createDistrictVectorSource(actualData, districts) {
+        timeOfData = actualData.dataTime;
+        let vectorSource = new ol.source.Vector({
+          features: new ol.format.GeoJSON().readFeatures(districts),
+          attributions:
+            "COVID-19 Datenquelle: BMSGPK via <a href='https://corin.at'>corin.at</a>, Einwohnerzahlen: STATISTIK AUSTRIA Erstellt am 20.1.2020.",
+        });
+        vectorSource.getFeatures().forEach((feature) => {
+          feature.setId(feature.values_.ID);
+          feature.setProperties({
+            infected: getActualDataForDistrictID(
+              actualData,
+              feature.values_.ID
+            ),
+          });
+          //console.log(feature);
+        });
+        return vectorSource;
+      }
+
+      const districtsPromise = fetch("./data/districts_3857.geojson");
+
+      const actualDataPromise2 = fetch("./facade.php"); //TODO: https://gisolutions.at/covid19info/facade.php
+
+      Promise.all([actualDataPromise2, districtsPromise])
+        .then((res) => Promise.all(res.map((r) => r.json())))
+        .then(([actualData, districts]) => {
+          let vectorSource = createDistrictVectorSource(actualData, districts);
+          document.getElementById("timeOfDate2").innerHTML =
+            actualData.dataTime;
+          let districtStatistics = calculateStatistics(vectorSource);
+          var vectorLayer = new ol.layer.Vector({
+            source: vectorSource,
+            style: calculateInitialDistrictMapStyling.bind(districtStatistics),
+          });
+          districtsMap.getView().fit(vectorLayer.getSource().getExtent());
+          districtsMap.addControl(
+            new ol.control.ZoomToExtent({
+              extent: vectorLayer.getSource().getExtent(),
+            })
+          );
+          districtsMap.addLayer(vectorLayer);
+        })
+        .catch((err) => console.error(err));
+
+      function calculateInteractionStyleforFeature(feature) {
+        let promile = Math.round(
+          (feature.values_.infected / feature.values_.inhab) * 1000
+        );
+        let stroke = new ol.style.Stroke({
+          color: "rgba(255, 255, 255, 0.5)",
+          width: 1.5,
+        });
+        return [
+          new ol.style.Style({
+            text: new ol.style.Text({
+              text: `${feature.values_.BL} \n  Einwohner: ${
+                feature.values_.inhab
+              }\n Infektionen: ${
+                feature.values_.infected == null
+                  ? " kein Wert"
+                  : feature.values_.infected
+              } \n Verhältnis: ${promile == 0 ? "< 1" : "≈" + promile}‰`,
+              fill: new ol.style.Fill({ color: "rgb(76, 81, 102)" }),
+              font: "14px Roboto",
+              stroke: stroke,
+              padding: [10, 10, 10, 10],
+              overflow: true,
+              backgroundFill: new ol.style.Fill({
+                color: "rgba(255, 255, 255, 1)",
+              }),
+            }),
+            geometry: chooseTextPoint,
+            zIndex: 20,
+          }),
+          new ol.style.Style({
+            fill: new ol.style.Fill({
+              color: "rgba(204, 51, 51,0.5)",
+            }),
+            stroke: new ol.style.Stroke({
+              color: "rgb(204, 51, 51)",
+              width: 3,
+            }),
+          }),
+        ];
+      }
+
+      //events on the country map
+      var selectedCountry = null;
+      countryMap.on(["click", "pointermove"], function (e) {
+        if (selectedCountry !== null) {
+          selectedCountry.setStyle(undefined);
+          selectedCountry = null;
+        }
+        //change the style of a polygon if there was an event on it
+        countryMap.forEachFeatureAtPixel(e.pixel, function (feature) {
+          selectedCountry = feature;
+          feature.setStyle(calculateInteractionStyleforFeature(feature));
+          return true;
+        });
+        // TODO add here code for a table view
+      });
+
+      //events on the districtsMap
+      var selectedDistrict = null;
+      districtsMap.on(["click", "pointermove"], function (e) {
+        if (selectedDistrict !== null) {
+          selectedDistrict.setStyle(undefined);
+          selectedDistrict = null;
+        }
+        //change the style of a polygon if there was an event on it
+        districtsMap.forEachFeatureAtPixel(e.pixel, function (feature) {
+          selectedDistrict = feature;
+          feature.setStyle(calculateInteractionStyleforFeature(feature));
+          return true;
+        });
+        // TODO add here code for a table view
+      });
+    </script>
+  </body>
+</html>
